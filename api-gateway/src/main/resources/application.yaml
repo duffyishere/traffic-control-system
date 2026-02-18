@@ -1,3 +1,14 @@
+server:
+  port: 8080
+
 spring:
   application:
     name: api-gateway
+  cloud:
+    discovery:
+      client:
+        simple:
+          instances:
+            api-service:
+              - uri: http://app1:8080
+              - uri: http://app2:8080
