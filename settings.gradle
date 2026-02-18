@@ -1,3 +1,4 @@
 rootProject.name = 'concert-ticketing-system'
 
 include 'consumer-api'
+include 'api-gateway'
