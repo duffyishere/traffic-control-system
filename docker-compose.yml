@@ -20,6 +20,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/concert_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: root
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
   app2:
       build: ./consumer-api
       container_name: api-server-2
@@ -31,6 +37,12 @@ services:
         SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/concert_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
         SPRING_DATASOURCE_USERNAME: root
         SPRING_DATASOURCE_PASSWORD: root
+        JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0
+      deploy:
+        resources:
+          limits:
+            cpus: '0.5'
+            memory: 512M
   mysql:
     image: mysql:8.0
     container_name: concert-mysql
@@ -42,3 +54,17 @@ services:
     volumes:
       - ./data/mysql:/var/lib/mysql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+  master:
+    image: locustio/locust
+    container_name: locust-master
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./locust:/mnt/locust
+    command: -f /mnt/locust/rate_limit_test.py --master
+  worker1:
+    image: locustio/locust
+    container_name: locust-worker-1
+    volumes:
+      - ./locust:/mnt/locust
+    command: -f /mnt/locust/rate_limit_test.py --worker --master-host master
