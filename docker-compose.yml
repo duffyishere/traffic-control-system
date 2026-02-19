@@ -54,6 +54,14 @@ services:
     volumes:
       - ./data/mysql:/var/lib/mysql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+  redis:
+    image: redis:8.6.0
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
   master:
     image: locustio/locust
     container_name: locust-master

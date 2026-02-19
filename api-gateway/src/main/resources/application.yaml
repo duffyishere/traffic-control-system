@@ -12,3 +12,7 @@ spring:
             api-service:
               - uri: http://app1:8080
               - uri: http://app2:8080
+  data:
+    redis:
+      host: http://redis
+      port: 6379
