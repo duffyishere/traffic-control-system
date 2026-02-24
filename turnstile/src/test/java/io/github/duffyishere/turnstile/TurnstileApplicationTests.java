@@ -1,10 +1,10 @@
-package io.github.duffyishere.waitingserver;
+package io.github.duffyishere.turnstile;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class WaitingServerApplicationTests {
+class TurnstileApplicationTests {
 
 	@Test
 	void contextLoads() {
