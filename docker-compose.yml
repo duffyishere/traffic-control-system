@@ -1,6 +1,11 @@
 version: '3.8'
 
 services:
+  turnstile:
+    build: ./turnstile
+    container_name: turnstile
+    ports:
+      - "8083:8080"
   gateway:
     build: ./api-gateway
     container_name: gateway

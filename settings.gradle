@@ -1,4 +1,4 @@
-rootProject.name = 'concert-ticketing-system'
+rootProject.name = 'traffic-control-system'
 
 include 'consumer-api'
 include 'api-gateway'
