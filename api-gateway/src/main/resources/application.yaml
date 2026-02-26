@@ -36,6 +36,10 @@ spring:
                   args:
                     bucketKey: "ratelimit"
                     redirectUri: "https://google.com"
+            - name: turnstile-route
+              uri: http://turnstile:8080
+              predicates:
+                - Path=/turnstile/**
     discovery:
       client:
         simple:

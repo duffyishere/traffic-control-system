@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
 @RestController
-@RequestMapping("/api/v1/queue")
+@RequestMapping("/turnstile/queue")
 @RequiredArgsConstructor
 public class QueueController {
 
