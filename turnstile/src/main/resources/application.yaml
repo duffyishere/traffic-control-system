@@ -2,7 +2,13 @@ spring:
   application:
     name: turnstile
   profiles:
-    active: prod
+    active: dev
+rate-limiter:
+  bucket:
+    key: ratelimit
+    capacity: 5
+    refill-token-amount: 1
+    refill-interval-seconds: 60
 
 ---
 server:

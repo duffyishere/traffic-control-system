@@ -2,10 +2,11 @@ spring:
   application:
     name: api-gateway
   profiles:
-    active: prod
+    active: dev
 
 rate-limiter:
   bucket:
+    key: ratelimit
     capacity: 5
     refill-token-amount: 1
     refill-interval-seconds: 60
@@ -34,7 +35,6 @@ spring:
               filters:
                 - name: RateLimiter
                   args:
-                    bucketKey: "ratelimit"
                     redirectUri: "https://google.com"
             - name: turnstile-route
               uri: http://turnstile:8080
@@ -72,7 +72,6 @@ spring:
               filters:
                 - name: RateLimiter
                   args:
-                    bucketKey: "ratelimit"
                     redirectUri: "https://google.com"
     discovery:
       client:

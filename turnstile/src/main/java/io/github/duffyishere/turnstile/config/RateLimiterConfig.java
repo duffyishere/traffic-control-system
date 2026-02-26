@@ -1,4 +1,4 @@
-package io.github.duffyishere.gateway.config;
+package io.github.duffyishere.turnstile.config;
 
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
@@ -17,12 +17,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 @Configuration
 @RequiredArgsConstructor
 public class RateLimiterConfig {
-
-    private final RedisClient redisClient;
 
     @Value("${rate-limiter.bucket.capacity}")
     private long CAPACITY;
@@ -38,7 +38,7 @@ public class RateLimiterConfig {
     }
 
     @Bean
-    public LettuceBasedProxyManager<String> lettuceBasedProxyManager() {
+    public LettuceBasedProxyManager<String> lettuceBasedProxyManager(RedisClient redisClient) {
         StatefulRedisConnection<String, byte[]> connection = redisClient.connect(RedisCodec.of(StringCodec.UTF8, ByteArrayCodec.INSTANCE));
         return LettuceBasedProxyManager.builderFor(connection)
                 .withExpirationStrategy(ExpirationAfterWriteStrategy.basedOnTimeForRefillingBucketUpToMax(REFILL_INTERVAL))
@@ -46,12 +46,12 @@ public class RateLimiterConfig {
     }
 
     @Bean
-    public BucketConfiguration bucketConfiguration() {
-        return BucketConfiguration.builder()
+    public Supplier<CompletableFuture<BucketConfiguration>> bucketConfiguration() {
+        return () -> CompletableFuture.completedFuture(BucketConfiguration.builder()
                 .addLimit(Bandwidth.builder()
                         .capacity(CAPACITY)
                         .refillIntervally(REFILL_TOKEN_AMOUNT, REFILL_INTERVAL)
                         .build()
-                ).build();
+                ).build());
     }
 }

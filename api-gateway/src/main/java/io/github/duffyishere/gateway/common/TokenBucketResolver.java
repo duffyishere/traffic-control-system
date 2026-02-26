@@ -1,26 +1,28 @@
 package io.github.duffyishere.gateway.common;
 
-import io.github.duffyishere.gateway.config.RateLimiterConfig;
 import io.github.bucket4j.Bucket;
+import io.github.bucket4j.BucketConfiguration;
 import io.github.bucket4j.ConsumptionProbe;
+import io.github.bucket4j.redis.lettuce.cas.LettuceBasedProxyManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
 public class TokenBucketResolver {
 
-    private final RateLimiterConfig rateLimiterConfig;
+    private final LettuceBasedProxyManager<String> proxyManager;
+    private final BucketConfiguration bucketConfiguration;
 
-    public boolean tryConsume(String key) {
-        Bucket bucket = getOrCreateBucket(key);
+    @Value("${rate-limiter.bucket.key}")
+    private String RATE_LIMITER_BUCKET_KEY;
+
+    public boolean tryConsume() {
+        Bucket bucket;
+        bucket = proxyManager.builder().build(RATE_LIMITER_BUCKET_KEY, () -> bucketConfiguration);
         ConsumptionProbe probe = consumeToken(bucket);
         return probe.isConsumed();
-    }
-
-    private Bucket getOrCreateBucket(String key) {
-        return rateLimiterConfig.lettuceBasedProxyManager().builder()
-                .build(key, rateLimiterConfig::bucketConfiguration);
     }
 
     private ConsumptionProbe consumeToken(Bucket bucket) {

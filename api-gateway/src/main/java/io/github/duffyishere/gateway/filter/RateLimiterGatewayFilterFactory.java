@@ -25,7 +25,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     public GatewayFilter apply(Config config) {
         return  (exchange, chain) -> {
             System.out.println("RateLimiterFilter 실행 됨. 요청 URI: " + exchange.getRequest().getURI());
-            if (tokenBucketResolver.tryConsume(config.getBucketKey())) {
+            if (tokenBucketResolver.tryConsume()) {
                 return chain.filter(exchange);
             } else {
                 ServerHttpResponse response = exchange.getResponse();
@@ -38,7 +38,6 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
 
     @Data
     public static class Config {
-        private String bucketKey;
         private String redirectUri;
     }
 }
