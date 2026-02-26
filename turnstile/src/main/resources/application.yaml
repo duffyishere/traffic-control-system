@@ -2,7 +2,7 @@ spring:
   application:
     name: turnstile
   profiles:
-    active: dev
+    active: prod
 rate-limiter:
   bucket:
     key: ratelimit

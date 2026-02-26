@@ -9,6 +9,7 @@ import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.util.UUID;
 
 @Component
 public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactory<RateLimiterGatewayFilterFactory.Config> {
@@ -30,7 +31,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
             } else {
                 ServerHttpResponse response = exchange.getResponse();
                 response.setStatusCode(HttpStatus.SEE_OTHER);
-                response.getHeaders().setLocation(URI.create(config.getRedirectUri()));
+                response.getHeaders().setLocation(URI.create(config.getRedirectUri() + "?requestId=" + UUID.randomUUID()));
                 return response.setComplete();
             }
         };

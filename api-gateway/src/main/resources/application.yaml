@@ -2,7 +2,7 @@ spring:
   application:
     name: api-gateway
   profiles:
-    active: dev
+    active: prod
 
 rate-limiter:
   bucket:
@@ -35,7 +35,7 @@ spring:
               filters:
                 - name: RateLimiter
                   args:
-                    redirectUri: "https://google.com"
+                    redirectUri: "http://turnstile:8080/queue/events"
             - name: turnstile-route
               uri: http://turnstile:8080
               predicates:
@@ -65,14 +65,18 @@ spring:
       server:
         webflux:
           routes:
-            - id: api-service-route
+            - name: api-service-route
               uri: lb://api-service
               predicates:
                 - Path=/api/v1/**
               filters:
                 - name: RateLimiter
                   args:
-                    redirectUri: "https://google.com"
+                    redirectUri: "http://localhost:8083/turnstile/queue/events"
+            - name: turnstile-route
+              uri: http://localhost:8083
+              predicates:
+                - Path=/turnstile/**
     discovery:
       client:
         simple:
