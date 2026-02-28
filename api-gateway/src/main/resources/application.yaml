@@ -10,6 +10,7 @@ rate-limiter:
     capacity: 5
     refill-token-amount: 1
     refill-interval-seconds: 60
+    redirect-threshold: 100
 
 ---
 server:
@@ -39,7 +40,7 @@ spring:
             - name: turnstile-route
               uri: http://turnstile:8080
               predicates:
-                - Path=/turnstile/**
+                - Path=/turnstile/**, /.well-known/openid-configuration
     discovery:
       client:
         simple:
@@ -47,6 +48,9 @@ spring:
             api-service:
               - uri: http://app1:8080
               - uri: http://app2:8080
+custom:
+  auth:
+    jwk-set-uri: http://turnstile:8080/.well-known/openid-configuration
 
 ---
 server:
@@ -76,7 +80,7 @@ spring:
             - name: turnstile-route
               uri: http://localhost:8083
               predicates:
-                - Path=/turnstile/**
+                - Path=/turnstile/**, /.well-known/openid-configuration
     discovery:
       client:
         simple:
@@ -84,3 +88,7 @@ spring:
             api-service:
               - uri: http://localhost:8081
               - uri: http://localhost:8082
+
+custom:
+  auth:
+    jwk-set-uri: http://localhost:8080/.well-known/openid-configuration

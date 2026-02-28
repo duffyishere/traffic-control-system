@@ -2,39 +2,66 @@ package io.github.duffyishere.gateway.filter;
 
 import io.github.duffyishere.gateway.common.TokenBucketResolver;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpResponse;
+import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
 
 import java.net.URI;
 import java.util.UUID;
 
 @Component
+@Slf4j
 public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactory<RateLimiterGatewayFilterFactory.Config> {
 
     private TokenBucketResolver tokenBucketResolver;
+    private ReactiveJwtDecoder jwtDecoder;
 
-    public RateLimiterGatewayFilterFactory(TokenBucketResolver tokenBucketResolver) {
+    @Value("${rate-limiter.bucket.redirect-threshold}")
+    private long REDIRECT_THRESHOLD = 100L;
+
+    public RateLimiterGatewayFilterFactory(TokenBucketResolver tokenBucketResolver, ReactiveJwtDecoder jwtDecoder) {
         super(Config.class);
         this.tokenBucketResolver = tokenBucketResolver;
-
+        this.jwtDecoder = jwtDecoder;
     }
 
     @Override
     public GatewayFilter apply(Config config) {
         return  (exchange, chain) -> {
-            System.out.println("RateLimiterFilter 실행 됨. 요청 URI: " + exchange.getRequest().getURI());
-            if (tokenBucketResolver.tryConsume()) {
-                return chain.filter(exchange);
+            log.info("RateLimiterFilter 실행 됨. 요청 URI: {}", exchange.getRequest().getURI());
+
+            String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                String token = authHeader.substring(7);
+                return jwtDecoder.decode(token)
+                        .flatMap(jwt -> chain.filter(exchange))
+                        .onErrorResume(e ->{
+                            log.error(">>> Error: {}", e.getMessage());
+                            return redirectToWaitRoom(exchange, config);
+                        });
             } else {
-                ServerHttpResponse response = exchange.getResponse();
-                response.setStatusCode(HttpStatus.SEE_OTHER);
-                response.getHeaders().setLocation(URI.create(config.getRedirectUri() + "?requestId=" + UUID.randomUUID()));
-                return response.setComplete();
+                if (REDIRECT_THRESHOLD < tokenBucketResolver.getRemainTokens() && tokenBucketResolver.tryConsume()) {
+                    return chain.filter(exchange);
+                } else {
+                    return redirectToWaitRoom(exchange, config);
+                }
             }
         };
+    }
+
+    private Mono<Void> redirectToWaitRoom(ServerWebExchange exchange, Config config) {
+        ServerHttpResponse response = exchange.getResponse();
+        response.setStatusCode(HttpStatus.SEE_OTHER);
+        response.getHeaders().setLocation(URI.create(config.getRedirectUri() + "?requestId=" + UUID.randomUUID()));
+        return response.setComplete();
     }
 
     @Data

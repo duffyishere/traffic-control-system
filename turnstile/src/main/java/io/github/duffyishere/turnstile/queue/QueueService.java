@@ -1,13 +1,14 @@
 package io.github.duffyishere.turnstile.queue;
 
+import com.nimbusds.jose.JOSEException;
 import io.github.duffyishere.turnstile.common.TokenBucketResolver;
+import io.github.duffyishere.turnstile.common.TokenProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.util.function.Function;
@@ -19,6 +20,7 @@ public class QueueService {
 
     private final RedisQueueRepository queueRepository;
     private final TokenBucketResolver tokenBucketResolver;
+    private final TokenProvider tokenProvider;
 
     private String queueName = "queue";
 
@@ -41,13 +43,15 @@ public class QueueService {
                             if (rank < 0) {
                                 return Mono.just(new QueueResponse("EXPIRED", -1L, null));
                             }
-
                             if (canAccess) {
-                                // TODO: Genenrate jwt token
-                                String token = "generated_jwt_token";
-                                return Mono.just(new QueueResponse("ALLOWED", 0L, token));
+                                try {
+                                    String token = tokenProvider.generateToken(requestId);
+                                    return Mono.just(new QueueResponse("ALLOWED", 0L, token));
+                                } catch (JOSEException e) {
+                                    log.error("Failed to generate token", e);
+                                    throw new RuntimeException(e);
+                                }
                             }
-
                             return Mono.just(new QueueResponse("WAITING", rank + 1, null));
                         }))
                         .takeUntil(response ->
