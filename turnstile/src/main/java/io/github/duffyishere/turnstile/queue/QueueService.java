@@ -43,7 +43,7 @@ public class QueueService {
                             if (rank < 0) {
                                 return Mono.just(new QueueResponse("EXPIRED", -1L, null));
                             }
-                            if (canAccess) {
+                            if (rank == 0 && canAccess) {
                                 try {
                                     String token = tokenProvider.generateToken(requestId);
                                     return Mono.just(new QueueResponse("ALLOWED", 0L, token));
