@@ -34,7 +34,7 @@ class WebsiteUser(HttpUser):
         with self.client.post("/api/v1/reservation", json=payload, catch_response=True) as post_response:
             if post_response.status_code == 200:
                 post_response.success()
-            elif post_response.status_code == 409:
-                post_response.failure("이미 예약된 좌석 (409)") 
+            elif post_response.status_code == 400:
+                post_response.failure("이미 예약된 좌석 (400)")
             else:
                 post_response.failure(f"예약 요청 실패: {post_response.status_code}")
