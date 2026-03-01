@@ -81,8 +81,11 @@ flowchart LR
 docker compose up --build
 ```
 
+실행 후 브라우저에서 `http://localhost:5173` 으로 접속하면 대기열/좌석 조회 페이지를 확인할 수 있습니다.
+
 ### 주요 포트
 
+- Web Client: `http://localhost:5173`
 - Gateway: `http://localhost:8080`
 - Turnstile: `http://localhost:8083`
 - Consumer API #1: `http://localhost:8081`

@@ -4,6 +4,10 @@ spring:
   profiles:
     active: prod
 
+custom:
+  frontend:
+    redirect-uri: http://localhost:5173/queue
+
 rate-limiter:
   bucket:
     key: ratelimit
@@ -36,7 +40,7 @@ spring:
               filters:
                 - name: RateLimiter
                   args:
-                    redirectUri: http://localhost:8080/turnstile/queue/events
+                    redirectUri: ${custom.frontend.redirect-uri}
             - name: turnstile-route
               uri: http://turnstile:8080
               predicates:
@@ -76,7 +80,7 @@ spring:
               filters:
                 - name: RateLimiter
                   args:
-                    redirectUri: "http://localhost:8083/turnstile/queue/events"
+                    redirectUri: ${custom.frontend.redirect-uri}
             - name: turnstile-route
               uri: http://localhost:8083
               predicates:

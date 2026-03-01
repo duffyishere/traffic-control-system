@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
@@ -79,15 +78,16 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     }
 
     private String resolveRequestedUri(ServerWebExchange exchange) {
-        if (HttpMethod.GET.equals(exchange.getRequest().getMethod()))
-            return normalizePathAndQuery(exchange.getRequest().getURI());
-
         String currentPageUri = exchange.getRequest().getHeaders().getFirst(CURRENT_PAGE_URI_HEADER);
         if (currentPageUri == null || currentPageUri.isBlank())
             currentPageUri = exchange.getRequest().getQueryParams().getFirst(CURRENT_PAGE_URI_PARAM);
 
         URI currentPage = parseUriOrNull(currentPageUri);
-        return normalizePathAndQuery(currentPage);
+        if (currentPage != null) {
+            return normalizePathAndQuery(currentPage);
+        }
+
+        return normalizePathAndQuery(exchange.getRequest().getURI());
     }
 
     private URI parseUriOrNull(String uriValue) {
