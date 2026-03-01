@@ -34,13 +34,17 @@ public class QueueService {
 
     @PostConstruct
     public void startDispatcher() {
-        this.dispatcherSubscription = Flux.interval(Duration.ZERO, DISPATCH_INTERVAL)
-                .concatMap(tick -> dispatchOnce()
+        this.dispatcherSubscription = Mono.defer(() -> dispatchOnce()
                         .onErrorResume(e -> {
                             log.error("Dispatcher loop failed", e);
                             return Mono.empty();
-                        }))
-                .subscribe();
+                        })
+                        .thenReturn(Boolean.TRUE))
+                .repeatWhen(repeatSignal -> repeatSignal.delayElements(DISPATCH_INTERVAL))
+                .subscribe(
+                        ignored -> { },
+                        error -> log.error("Dispatcher stream terminated unexpectedly", error)
+                );
     }
 
     @PreDestroy
@@ -87,8 +91,9 @@ public class QueueService {
 
         return Flux.usingWhen(
                 resourceSupplier,
-                id -> Flux.interval(Duration.ZERO, STATUS_POLL_INTERVAL)
-                        .concatMap(tick -> currentStatus(id, requestedUri))
+                id -> Mono.defer(() -> currentStatus(id, requestedUri))
+                        .flux()
+                        .repeatWhen(repeatSignal -> repeatSignal.delayElements(STATUS_POLL_INTERVAL))
                         .takeUntil(response ->
                                 "ALLOWED".equals(response.status()) || "EXPIRED".equals(response.status())
                         ),
