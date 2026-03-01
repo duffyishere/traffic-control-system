@@ -70,17 +70,17 @@ public class QueueService {
         }
     }
 
-    public Mono<QueueResponse> currentStatus(String requestId) {
+    public Mono<QueueResponse> currentStatus(String requestId, String requestedUri) {
         return queueRepository.getGrant(requestId)
-                .map(token -> new QueueResponse("ALLOWED", 0L, token))
+                .map(token -> new QueueResponse("ALLOWED", 0L, token, normalizeRequestedUri(requestedUri)))
                 .switchIfEmpty(
                         queueRepository.getRank(QUEUE_NAME, requestId)
-                                .map(rank -> new QueueResponse("WAITING", rank + 1, null))
-                                .defaultIfEmpty(new QueueResponse("EXPIRED", -1L, null))
+                                .map(rank -> new QueueResponse("WAITING", rank + 1, null, null))
+                                .defaultIfEmpty(new QueueResponse("EXPIRED", -1L, null, null))
                 );
     }
 
-    public Flux<QueueResponse> subscribeQueue(String requestId) {
+    public Flux<QueueResponse> subscribeQueue(String requestId, String requestedUri) {
         Mono<String> resourceSupplier = queueRepository.register(QUEUE_NAME, requestId)
                 .thenReturn(requestId);
         Function<String, Publisher<?>> asyncCleanup = id -> queueRepository.remove(QUEUE_NAME, id);
@@ -88,11 +88,18 @@ public class QueueService {
         return Flux.usingWhen(
                 resourceSupplier,
                 id -> Flux.interval(Duration.ZERO, STATUS_POLL_INTERVAL)
-                        .concatMap(tick -> currentStatus(id))
+                        .concatMap(tick -> currentStatus(id, requestedUri))
                         .takeUntil(response ->
                                 "ALLOWED".equals(response.status()) || "EXPIRED".equals(response.status())
                         ),
                 asyncCleanup
         );
+    }
+
+    private String normalizeRequestedUri(String requestedUri) {
+        if (requestedUri == null || requestedUri.isBlank()) {
+            return null;
+        }
+        return requestedUri;
     }
 }

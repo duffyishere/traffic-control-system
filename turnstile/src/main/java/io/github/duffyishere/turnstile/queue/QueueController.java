@@ -17,8 +17,11 @@ public class QueueController {
     private final QueueService queueService;
 
     @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<QueueResponse>> subscribe(@RequestParam String requestId) {
-        return queueService.subscribeQueue(requestId)
+    public Flux<ServerSentEvent<QueueResponse>> subscribe(
+            @RequestParam String requestId,
+            @RequestParam(required = false) String requestedUri
+    ) {
+        return queueService.subscribeQueue(requestId, requestedUri)
                 .map(data -> ServerSentEvent.<QueueResponse>builder()
                         .event(data.status().toLowerCase())
                         .data(data)
