@@ -9,6 +9,7 @@ custom:
     redirect-uri: http://localhost:5173/queue
 
 rate-limiter:
+  enabled: true
   bucket:
     key: ratelimit
     capacity: 300

@@ -28,6 +28,9 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     private TokenBucketResolver tokenBucketResolver;
     private ReactiveJwtDecoder jwtDecoder;
 
+    @Value("${rate-limiter.enabled:true}")
+    private boolean rateLimiterEnabled;
+
     @Value("${rate-limiter.bucket.redirect-threshold}")
     private long REDIRECT_THRESHOLD = 100L;
 
@@ -40,6 +43,10 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     @Override
     public GatewayFilter apply(Config config) {
         return  (exchange, chain) -> {
+            if (!rateLimiterEnabled) {
+                return chain.filter(exchange);
+            }
+
             log.info("RateLimiterFilter 실행 됨. 요청 URI: {}", exchange.getRequest().getURI());
 
             String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);

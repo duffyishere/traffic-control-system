@@ -118,11 +118,21 @@ docker compose down
 
 ## 부하 테스트
 
-Locust 시나리오 파일: [`locust/rate_limit_test.py`](./locust/rate_limit_test.py)
+Locust 시나리오 파일:
 
-- 좌석 조회 후 랜덤 좌석 예약 요청
-- 성공 응답: `200`
-- 중복 예약 등 실패 응답: `400`
+- `locust/seat_reservation_test.py`
+  - Turnstile 없이 `좌석 조회 -> 좌석 예약` 흐름만 테스트
+  - Gateway를 사용할 경우 `RATE_LIMITER_ENABLED=false` 로 실행
+- `locust/rate_limit_test.py`
+  - Gateway 레이트 리미트 + Turnstile 대기열 포함 시나리오
+
+좌석 조회 후 랜덤 좌석 예약을 요청하며, `200`은 성공, `400`은 중복 예약 같은 비즈니스 실패로 간주해 정상 처리합니다.
+
+Turnstile 없이 Gateway 경유로 테스트하려면 예시처럼 실행하면 됩니다.
+
+```bash
+RATE_LIMITER_ENABLED=false docker compose up --build gateway app1 app2 mysql redis master worker1 web-client
+```
 
 실행 후 Locust UI(`http://localhost:8089`)에서 사용자 수와 증가율을 조절해 테스트할 수 있습니다.
 
