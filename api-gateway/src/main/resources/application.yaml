@@ -11,10 +11,10 @@ custom:
 rate-limiter:
   bucket:
     key: ratelimit
-    capacity: 5
-    refill-token-amount: 1
-    refill-interval-seconds: 60
-    redirect-threshold: 100
+    capacity: 300
+    refill-token-amount: 30
+    refill-interval-seconds: 1
+    redirect-threshold: 2
 
 ---
 server:
