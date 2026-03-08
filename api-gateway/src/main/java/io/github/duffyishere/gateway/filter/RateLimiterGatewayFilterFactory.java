@@ -29,7 +29,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     private ReactiveJwtDecoder jwtDecoder;
 
     @Value("${rate-limiter.bucket.redirect-threshold}")
-    private long REDIRECT_THRESHOLD = 100L;
+    private long REDIRECT_THRESHOLD;
 
     public RateLimiterGatewayFilterFactory(TokenBucketResolver tokenBucketResolver, ReactiveJwtDecoder jwtDecoder) {
         super(Config.class);
