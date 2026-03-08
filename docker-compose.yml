@@ -6,14 +6,23 @@ services:
     container_name: turnstile
     ports:
       - "8083:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
   gateway:
     build: ./api-gateway
     container_name: gateway
     ports:
       - "8080:8080"
+    environment:
+      RATE_LIMITER_ENABLED: ${RATE_LIMITER_ENABLED:-true}
     depends_on:
-      - app1
-      - app2
+      app1:
+        condition: service_started
+      app2:
+        condition: service_started
+      redis:
+        condition: service_healthy
   web-client:
     build: ./web-client
     container_name: web-client
@@ -29,12 +38,14 @@ services:
     ports:
       - "8081:8080"
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/concert_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: root
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0
+    restart: on-failure
     deploy:
       resources:
         limits:
@@ -46,12 +57,14 @@ services:
       ports:
         - "8082:8080"
       depends_on:
-        - mysql
+        mysql:
+          condition: service_healthy
       environment:
         SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/concert_db?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
         SPRING_DATASOURCE_USERNAME: root
         SPRING_DATASOURCE_PASSWORD: root
         JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0
+      restart: on-failure
       deploy:
         resources:
           limits:
@@ -68,6 +81,12 @@ services:
     volumes:
       - ./data/mysql:/var/lib/mysql
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
   redis:
     image: redis:8.6.0
     ports:
@@ -76,6 +95,12 @@ services:
       - ./data/redis:/data
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
     command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
   master:
     image: locustio/locust
     container_name: locust-master
@@ -83,10 +108,10 @@ services:
       - "8089:8089"
     volumes:
       - ./locust:/mnt/locust
-    command: -f /mnt/locust/rate_limit_test.py --master
+    command: -f /mnt/locust/${LOCUST_FILE:-seat_reservation_test.py} --master
   worker1:
     image: locustio/locust
     container_name: locust-worker-1
     volumes:
       - ./locust:/mnt/locust
-    command: -f /mnt/locust/rate_limit_test.py --worker --master-host master
+    command: -f /mnt/locust/${LOCUST_FILE:-seat_reservation_test.py} --worker --master-host master
