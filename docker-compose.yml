@@ -38,6 +38,7 @@ services:
       - "5173:5173"
     environment:
       VITE_API_PROXY_TARGET: http://gateway:8080
+      VITE_QUEUE_PROGRESS_PER_SECOND: ${ADMISSION_BUCKET_REFILL_AMOUNT:-120}
     depends_on:
       - gateway
   app1:
@@ -98,16 +99,3 @@ services:
       timeout: 3s
       retries: 20
       start_period: 5s
-  master:
-    image: locustio/locust
-    container_name: locust-master
-    ports:
-      - "8089:8089"
-    volumes:
-      - ./locust:/mnt/locust
-    command: -f /mnt/locust/${LOCUST_FILE:-seat_reservation_test.py} --master
-  worker:
-    image: locustio/locust
-    volumes:
-      - ./locust:/mnt/locust
-    command: -f /mnt/locust/${LOCUST_FILE:-seat_reservation_test.py} --worker --master-host master
