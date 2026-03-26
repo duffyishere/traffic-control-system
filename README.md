@@ -131,7 +131,7 @@ Locust 시나리오 파일:
 Turnstile 없이 Gateway 경유로 테스트하려면 예시처럼 실행하면 됩니다.
 
 ```bash
-RATE_LIMITER_ENABLED=false docker compose up --build gateway app1 app2 mysql redis master worker1 web-client
+RATE_LIMITER_ENABLED=false docker compose up --build gateway app1 app2 mysql redis master worker web-client
 ```
 
 실행 후 Locust UI(`http://localhost:8089`)에서 사용자 수와 증가율을 조절해 테스트할 수 있습니다.

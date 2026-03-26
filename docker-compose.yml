@@ -4,6 +4,10 @@ services:
   turnstile:
     build: ./turnstile
     container_name: turnstile
+    environment:
+      ADMISSION_BUCKET_CAPACITY: ${ADMISSION_BUCKET_CAPACITY:-300}
+      ADMISSION_BUCKET_REFILL_AMOUNT: ${ADMISSION_BUCKET_REFILL_AMOUNT:-120}
+      ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS: ${ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS:-1}
     ports:
       - "8083:8080"
     depends_on:
@@ -16,6 +20,10 @@ services:
       - "8080:8080"
     environment:
       RATE_LIMITER_ENABLED: ${RATE_LIMITER_ENABLED:-true}
+      ADMISSION_BUCKET_CAPACITY: ${ADMISSION_BUCKET_CAPACITY:-300}
+      ADMISSION_BUCKET_REFILL_AMOUNT: ${ADMISSION_BUCKET_REFILL_AMOUNT:-120}
+      ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS: ${ADMISSION_BUCKET_REFILL_INTERVAL_SECONDS:-1}
+      ADMISSION_BUCKET_REDIRECT_THRESHOLD: ${ADMISSION_BUCKET_REDIRECT_THRESHOLD:-2}
     depends_on:
       app1:
         condition: service_started
@@ -34,7 +42,6 @@ services:
       - gateway
   app1:
     build: ./consumer-api
-    container_name: api-server-1
     ports:
       - "8081:8080"
     depends_on:
@@ -46,14 +53,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: root
       JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0
     restart: on-failure
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
   app2:
       build: ./consumer-api
-      container_name: api-server-2
       ports:
         - "8082:8080"
       depends_on:
@@ -65,11 +66,7 @@ services:
         SPRING_DATASOURCE_PASSWORD: root
         JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75.0
       restart: on-failure
-      deploy:
-        resources:
-          limits:
-            cpus: '0.5'
-            memory: 512M
+
   mysql:
     image: mysql:8.0
     container_name: concert-mysql
@@ -109,9 +106,8 @@ services:
     volumes:
       - ./locust:/mnt/locust
     command: -f /mnt/locust/${LOCUST_FILE:-seat_reservation_test.py} --master
-  worker1:
+  worker:
     image: locustio/locust
-    container_name: locust-worker-1
     volumes:
       - ./locust:/mnt/locust
     command: -f /mnt/locust/${LOCUST_FILE:-seat_reservation_test.py} --worker --master-host master
