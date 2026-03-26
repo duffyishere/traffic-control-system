@@ -79,4 +79,24 @@ class QueueServiceTest {
         verify(tokenBucketResolver, never()).consumeAvailable(anyLong());
         verify(queueRepository, never()).popHead(any(), anyLong());
     }
+
+    @Test
+    void subscribeQueueKeepsStreamAliveWhenRefreshTicksOutpaceDemand() {
+        ReflectionTestUtils.setField(queueService, "statusRefreshInterval", Duration.ofSeconds(5));
+
+        when(queueRepository.register("queue", "req-1")).thenReturn(Mono.empty());
+        when(queueRepository.remove("queue", "req-1")).thenReturn(Mono.empty());
+        when(queueRepository.getGrant("req-1")).thenReturn(Mono.empty());
+        when(queueRepository.getRank("queue", "req-1")).thenReturn(Mono.just(0L));
+        when(queueNotificationBus.notificationsFor("req-1")).thenReturn(Flux.never());
+
+        StepVerifier.withVirtualTime(() -> queueService.subscribeQueue("req-1", "/concerts"), 1)
+                .expectSubscription()
+                .expectNextMatches(response -> "WAITING".equals(response.status()) && response.rank() == 1L)
+                .thenAwait(Duration.ofSeconds(20))
+                .thenCancel()
+                .verify();
+
+        verify(queueRepository).remove("queue", "req-1");
+    }
 }

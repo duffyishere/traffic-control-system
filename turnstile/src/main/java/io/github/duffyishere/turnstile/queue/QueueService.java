@@ -60,6 +60,7 @@ public class QueueService {
         this.grantTtl = Duration.ofSeconds(grantTtlSeconds);
 
         this.dispatcherSubscription = Flux.interval(Duration.ZERO, dispatchInterval)
+                .onBackpressureDrop()
                 .concatMap(ignored -> dispatchSafely())
                 .subscribe(
                         ignored -> { },
@@ -165,6 +166,7 @@ public class QueueService {
         Flux<QueueResponse> allowedNotifications = queueNotificationBus.notificationsFor(requestId)
                 .map(notification -> notificationResponse(notification, normalizedRequestedUri));
         Flux<QueueResponse> fallbackStatusRefresh = Flux.interval(statusRefreshInterval, statusRefreshInterval)
+                .onBackpressureDrop()
                 .concatMap(ignored -> currentStatus(requestId, normalizedRequestedUri));
 
         return Flux.merge(initialStatus, allowedNotifications, fallbackStatusRefresh)
