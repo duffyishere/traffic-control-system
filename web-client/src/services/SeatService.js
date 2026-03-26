@@ -29,6 +29,8 @@ export class SeatService {
 
     const contentType = response.headers.get("content-type") || "";
     const redirectedUrl = new URL(response.url, window.location.origin);
+    const isQueueJsonResponse = response.status === 202 && contentType.includes("application/json");
+    const queuePayload = isQueueJsonResponse ? await response.clone().json().catch(() => null) : null;
 
     const isQueuePageRedirect =
       response.redirected &&
@@ -40,9 +42,13 @@ export class SeatService {
 
     return {
       response,
-      isQueueRedirect: isQueuePageRedirect || isQueueSseRedirect,
-      queuePagePath: isQueuePageRedirect ? `${redirectedUrl.pathname}${redirectedUrl.search}` : null,
-      queueUrl: isQueueSseRedirect ? response.url : null,
+      isQueueRedirect: isQueueJsonResponse || isQueuePageRedirect || isQueueSseRedirect,
+      queuePagePath:
+        queuePayload?.queuePagePath || (isQueuePageRedirect ? `${redirectedUrl.pathname}${redirectedUrl.search}` : null),
+      queueUrl:
+        (queuePayload?.queueSsePath
+          ? new URL(queuePayload.queueSsePath, window.location.origin).toString()
+          : null) || (isQueueSseRedirect ? response.url : null),
     };
   }
 

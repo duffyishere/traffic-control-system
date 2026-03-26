@@ -9,12 +9,9 @@ app:
     startup-check:
       enabled: true
 
-custom:
-  frontend:
-    redirect-uri: http://localhost:5173/queue
-
 rate-limiter:
   enabled: true
+  queue-unauthenticated-requests: ${QUEUE_UNAUTHENTICATED_REQUESTS:true}
   bucket:
     key: ${ADMISSION_BUCKET_KEY:admission}
     capacity: ${ADMISSION_BUCKET_CAPACITY:300}
@@ -45,8 +42,6 @@ spring:
                 - Path=/api/v1/**
               filters:
                 - name: RateLimiter
-                  args:
-                    redirectUri: ${custom.frontend.redirect-uri}
             - name: turnstile-route
               uri: http://turnstile:8080
               predicates:
@@ -85,8 +80,6 @@ spring:
                 - Path=/api/v1/**
               filters:
                 - name: RateLimiter
-                  args:
-                    redirectUri: ${custom.frontend.redirect-uri}
             - name: turnstile-route
               uri: http://localhost:8083
               predicates:

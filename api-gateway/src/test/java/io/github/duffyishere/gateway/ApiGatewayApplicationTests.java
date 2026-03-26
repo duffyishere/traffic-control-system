@@ -3,6 +3,8 @@ package io.github.duffyishere.gateway;
 import io.github.duffyishere.gateway.common.TokenBucketResolver;
 import io.github.duffyishere.gateway.filter.RateLimiterGatewayFilterFactory;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -16,7 +18,10 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -28,12 +33,36 @@ import static org.mockito.Mockito.when;
 class ApiGatewayApplicationTests {
 
     @Test
-    void allowsDirectAccessWhenAdmissionBucketAcceptsRequest() {
+    void queuesUnauthenticatedRequestsWithoutTouchingAdmissionBucketByDefault() throws Exception {
+        TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
+        ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
+
+        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
+        GatewayFilterChain chain = mock(GatewayFilterChain.class);
+        MockServerWebExchange exchange = MockServerWebExchange.from(
+                MockServerHttpRequest.get("/api/v1/concerts/seats").build()
+        );
+
+        StepVerifier.create(filterFactory.apply(config()).filter(exchange, chain))
+                .verifyComplete();
+
+        verify(chain, never()).filter(exchange);
+        verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(2L);
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        String payload = responseBody(exchange);
+        assertThat(extractJsonValue(payload, "status")).isEqualTo("QUEUED");
+        assertThat(extractJsonValue(payload, "requestId")).isNotBlank();
+        assertThat(extractJsonValue(payload, "queuePagePath")).startsWith("/queue?requestId=");
+        assertThat(extractJsonValue(payload, "queueSsePath")).startsWith("/turnstile/queue/events?requestId=");
+    }
+
+    @Test
+    void allowsDirectAccessWhenLegacyAdmissionBucketAcceptsRequest() {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(tokenBucketResolver.tryConsumeAboveThreshold(2L)).thenReturn(Mono.just(Boolean.TRUE));
 
-        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
+        RateLimiterGatewayFilterFactory filterFactory = legacyAdmissionFilterFactory(tokenBucketResolver, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         MockServerWebExchange exchange = MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/v1/concerts/seats").build()
@@ -48,12 +77,12 @@ class ApiGatewayApplicationTests {
     }
 
     @Test
-    void redirectsToQueueWhenAdmissionBucketRejectsRequest() {
+    void queuesRequestWhenAdmissionBucketRejectsRequest() throws Exception {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(tokenBucketResolver.tryConsumeAboveThreshold(2L)).thenReturn(Mono.just(Boolean.FALSE));
 
-        RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
+        RateLimiterGatewayFilterFactory filterFactory = legacyAdmissionFilterFactory(tokenBucketResolver, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
         MockServerWebExchange exchange = MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/v1/concerts/seats?concertId=1").build()
@@ -63,11 +92,10 @@ class ApiGatewayApplicationTests {
                 .verifyComplete();
 
         verify(chain, never()).filter(exchange);
-        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.SEE_OTHER);
-        var location = exchange.getResponse().getHeaders().getLocation();
-        assertThat(location).isNotNull();
-        assertThat(location.getPath()).isEqualTo("/queue");
-        var queryParams = UriComponentsBuilder.fromUri(location).build().getQueryParams();
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        String payload = responseBody(exchange);
+        assertThat(extractJsonValue(payload, "status")).isEqualTo("QUEUED");
+        var queryParams = UriComponentsBuilder.fromUriString(extractJsonValue(payload, "queuePagePath")).build().getQueryParams();
         assertThat(queryParams.getFirst("requestId")).isNotBlank();
         assertThat(org.springframework.web.util.UriUtils.decode(
                 queryParams.getFirst("requestedUri"),
@@ -76,7 +104,7 @@ class ApiGatewayApplicationTests {
     }
 
     @Test
-    void redirectsToQueueWhenBearerTokenIsInvalid() {
+    void queuesRequestWhenBearerTokenIsInvalid() {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
         when(jwtDecoder.decode(anyString())).thenReturn(Mono.error(new BadJwtException("invalid")));
@@ -94,7 +122,7 @@ class ApiGatewayApplicationTests {
 
         verify(chain, never()).filter(exchange);
         verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(2L);
-        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.SEE_OTHER);
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
     }
 
     @Test
@@ -128,12 +156,39 @@ class ApiGatewayApplicationTests {
             TokenBucketResolver tokenBucketResolver,
             ReactiveJwtDecoder jwtDecoder
     ) {
-        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, 2L);
+        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, true, 2L);
+    }
+
+    private RateLimiterGatewayFilterFactory legacyAdmissionFilterFactory(
+            TokenBucketResolver tokenBucketResolver,
+            ReactiveJwtDecoder jwtDecoder
+    ) {
+        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, false, 2L);
     }
 
     private RateLimiterGatewayFilterFactory.Config config() {
-        RateLimiterGatewayFilterFactory.Config config = new RateLimiterGatewayFilterFactory.Config();
-        config.setRedirectUri("http://localhost:5173/queue");
-        return config;
+        return new RateLimiterGatewayFilterFactory.Config();
+    }
+
+    private String responseBody(MockServerWebExchange exchange) {
+        DataBuffer bodyBuffer = DataBufferUtils.join(exchange.getResponse().getBody()).block(Duration.ofSeconds(1));
+        assertThat(bodyBuffer).isNotNull();
+
+        try {
+            byte[] bytes = new byte[bodyBuffer.readableByteCount()];
+            bodyBuffer.read(bytes);
+            return new String(bytes, StandardCharsets.UTF_8);
+        } finally {
+            DataBufferUtils.release(bodyBuffer);
+        }
+    }
+
+    private String extractJsonValue(String body, String fieldName) {
+        Pattern pattern = Pattern.compile("\"" + fieldName + "\":\"([^\"]*)\"");
+        Matcher matcher = pattern.matcher(body);
+        assertThat(matcher.find()).isTrue();
+        return matcher.group(1)
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\");
     }
 }
