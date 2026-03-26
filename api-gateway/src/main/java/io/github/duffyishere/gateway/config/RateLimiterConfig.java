@@ -17,6 +17,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 @Configuration
 @RequiredArgsConstructor
@@ -46,12 +48,12 @@ public class RateLimiterConfig {
     }
 
     @Bean
-    public BucketConfiguration bucketConfiguration() {
-        return BucketConfiguration.builder()
+    public Supplier<CompletableFuture<BucketConfiguration>> bucketConfiguration() {
+        return () -> CompletableFuture.completedFuture(BucketConfiguration.builder()
                 .addLimit(Bandwidth.builder()
                         .capacity(CAPACITY)
                         .refillIntervally(REFILL_TOKEN_AMOUNT, REFILL_INTERVAL)
                         .build()
-                ).build();
+                ).build());
     }
 }

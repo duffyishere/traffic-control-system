@@ -5,17 +5,22 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.util.UriUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import java.util.UUID;
 
 @Component
@@ -24,70 +29,98 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
 
     private static final String CURRENT_PAGE_URI_HEADER = "X-Current-Page-Uri";
     private static final String CURRENT_PAGE_URI_PARAM = "currentPageUri";
+    private static final String BEARER_PREFIX = "Bearer ";
 
-    private TokenBucketResolver tokenBucketResolver;
-    private ReactiveJwtDecoder jwtDecoder;
+    private final TokenBucketResolver tokenBucketResolver;
+    private final ReactiveJwtDecoder jwtDecoder;
+    private final boolean rateLimiterEnabled;
+    private final long redirectThreshold;
 
-    @Value("${rate-limiter.enabled:true}")
-    private boolean rateLimiterEnabled;
-
-    @Value("${rate-limiter.bucket.redirect-threshold}")
-    private long REDIRECT_THRESHOLD;
-
-    public RateLimiterGatewayFilterFactory(TokenBucketResolver tokenBucketResolver, ReactiveJwtDecoder jwtDecoder) {
+    public RateLimiterGatewayFilterFactory(
+            TokenBucketResolver tokenBucketResolver,
+            ReactiveJwtDecoder jwtDecoder,
+            @Value("${rate-limiter.enabled:true}") boolean rateLimiterEnabled,
+            @Value("${rate-limiter.bucket.redirect-threshold}") long redirectThreshold
+    ) {
         super(Config.class);
         this.tokenBucketResolver = tokenBucketResolver;
         this.jwtDecoder = jwtDecoder;
+        this.rateLimiterEnabled = rateLimiterEnabled;
+        this.redirectThreshold = redirectThreshold;
     }
 
     @Override
     public GatewayFilter apply(Config config) {
-        return  (exchange, chain) -> {
+        return (exchange, chain) -> {
             if (!rateLimiterEnabled) {
                 return chain.filter(exchange);
             }
 
-            log.info("RateLimiterFilter 실행 됨. 요청 URI: {}", exchange.getRequest().getURI());
-
-            String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                String token = authHeader.substring(7);
-                return jwtDecoder.decode(token)
-                        .flatMap(jwt -> chain.filter(exchange))
-                        .onErrorResume(e ->{
-                            log.error(">>> Error: {}", e.getMessage());
-                            return redirectToWaitRoom(exchange, config);
-                        });
-            } else {
-                if (REDIRECT_THRESHOLD < tokenBucketResolver.getRemainTokens() && tokenBucketResolver.tryConsume()) {
-                    return chain.filter(exchange);
-                } else {
-                    return redirectToWaitRoom(exchange, config);
-                }
-            }
+            return extractBearerToken(exchange)
+                    .map(token -> validateQueueToken(token, exchange, chain, config))
+                    .orElseGet(() -> applyAdmissionControl(exchange, chain, config));
         };
+    }
+
+    private Mono<Void> validateQueueToken(
+            String token,
+            ServerWebExchange exchange,
+            GatewayFilterChain chain,
+            Config config
+    ) {
+        return jwtDecoder.decode(token)
+                .flatMap(jwt -> chain.filter(exchange))
+                .onErrorResume(error -> {
+                    log.debug("Queue redirect because token validation failed: {}", error.getMessage());
+                    return redirectToWaitRoom(exchange, config);
+                });
+    }
+
+    private Mono<Void> applyAdmissionControl(
+            ServerWebExchange exchange,
+            GatewayFilterChain chain,
+            Config config
+    ) {
+        return tokenBucketResolver.tryConsumeAboveThreshold(redirectThreshold)
+                .flatMap(allowed -> allowed ? chain.filter(exchange) : redirectToWaitRoom(exchange, config))
+                .onErrorResume(error -> {
+                    log.warn("Queue redirect because admission check failed: {}", error.getMessage());
+                    return redirectToWaitRoom(exchange, config);
+                });
     }
 
     private Mono<Void> redirectToWaitRoom(ServerWebExchange exchange, Config config) {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(HttpStatus.SEE_OTHER);
-        String requestId = UUID.randomUUID().toString();
-        String requestedUri = resolveRequestedUri(exchange);
-
-        URI location = UriComponentsBuilder.fromUriString(config.getRedirectUri())
-                .queryParam("requestId", requestId)
-                .queryParam("requestedUri", requestedUri)
-                .build(true)
-                .toUri();
-
-        response.getHeaders().setLocation(location);
+        response.getHeaders().setLocation(buildRedirectLocation(config, resolveRequestedUri(exchange)));
         return response.setComplete();
+    }
+
+    private URI buildRedirectLocation(Config config, String requestedUri) {
+        UriComponentsBuilder locationBuilder = UriComponentsBuilder.fromUriString(config.getRedirectUri())
+                .queryParam("requestId", UUID.randomUUID());
+
+        if (requestedUri != null) {
+            locationBuilder.queryParam("requestedUri", UriUtils.encode(requestedUri, StandardCharsets.UTF_8));
+        }
+
+        return locationBuilder.build(true).toUri();
+    }
+
+    private Optional<String> extractBearerToken(ServerWebExchange exchange) {
+        String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        if (!StringUtils.hasText(authHeader) || !authHeader.startsWith(BEARER_PREFIX)) {
+            return Optional.empty();
+        }
+
+        return Optional.of(authHeader.substring(BEARER_PREFIX.length()));
     }
 
     private String resolveRequestedUri(ServerWebExchange exchange) {
         String currentPageUri = exchange.getRequest().getHeaders().getFirst(CURRENT_PAGE_URI_HEADER);
-        if (currentPageUri == null || currentPageUri.isBlank())
+        if (!StringUtils.hasText(currentPageUri)) {
             currentPageUri = exchange.getRequest().getQueryParams().getFirst(CURRENT_PAGE_URI_PARAM);
+        }
 
         URI currentPage = parseUriOrNull(currentPageUri);
         if (currentPage != null) {
@@ -98,7 +131,10 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     }
 
     private URI parseUriOrNull(String uriValue) {
-        if (uriValue == null || uriValue.isBlank()) return null;
+        if (!StringUtils.hasText(uriValue)) {
+            return null;
+        }
+
         try {
             return URI.create(uriValue);
         } catch (IllegalArgumentException e) {
@@ -108,9 +144,15 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     }
 
     private String normalizePathAndQuery(URI uri) {
-        if (uri == null) return "/";
+        if (uri == null) {
+            return "/";
+        }
+
         String path = uri.getRawPath();
-        if (path == null || path.isBlank()) return "/";
+        if (!StringUtils.hasText(path)) {
+            return "/";
+        }
+
         String query = uri.getRawQuery();
         return query == null ? path : path + "?" + query;
     }
