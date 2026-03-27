@@ -120,7 +120,6 @@ class QueueEntry:
 class LoadConfig:
     gateway_origin: str
     web_origin: str
-    queue_origin: str
     api_path: str
     current_page_uri: str
     queue_timeout_seconds: float
@@ -587,9 +586,9 @@ def resolve_queue_entry_from_json(initial: HttpResponse, config: LoadConfig) -> 
     queue_page_path = payload.get("queuePagePath")
     queue_sse_path = payload.get("queueSsePath")
     queue_sse_url = (
-        urljoin(f"{config.queue_origin}/", queue_sse_path)
+        urljoin(f"{config.gateway_origin}/", queue_sse_path)
         if queue_sse_path
-        else build_queue_sse_url(config.queue_origin, request_id, requested_uri)
+        else build_queue_sse_url(config.gateway_origin, request_id, requested_uri)
     )
 
     return QueueEntry(
@@ -613,12 +612,12 @@ def resolve_queue_entry_from_redirect(initial: HttpResponse, config: LoadConfig)
         request_id=request_id,
         requested_uri=requested_uri,
         queue_page_path=f"{queue_parts.path}?{queue_parts.query}" if queue_parts.query else queue_parts.path,
-        queue_sse_url=build_queue_sse_url(config.queue_origin, request_id, requested_uri),
+        queue_sse_url=build_queue_sse_url(config.gateway_origin, request_id, requested_uri),
     )
 
 
-def build_queue_sse_url(web_origin: str, request_id: str, requested_uri: str | None) -> str:
-    base = f"{web_origin.rstrip('/')}/turnstile/queue/events?requestId={request_id}"
+def build_queue_sse_url(gateway_origin: str, request_id: str, requested_uri: str | None) -> str:
+    base = f"{gateway_origin.rstrip('/')}/turnstile/queue/events?requestId={request_id}"
     if requested_uri:
         from urllib.parse import quote
 
@@ -685,11 +684,9 @@ def print_stage_summary(stage: StageResult) -> None:
 
 
 async def main_async(args) -> int:
-    queue_origin = normalize_origin(args.queue_origin or args.gateway_origin)
     config = LoadConfig(
         gateway_origin=normalize_origin(args.gateway_origin),
         web_origin=normalize_origin(args.web_origin),
-        queue_origin=queue_origin,
         api_path=args.api_path,
         current_page_uri=args.current_page_uri,
         queue_timeout_seconds=args.queue_timeout_seconds,
@@ -709,7 +706,6 @@ async def main_async(args) -> int:
         payload = {
             "gateway_origin": config.gateway_origin,
             "web_origin": config.web_origin,
-            "queue_origin": config.queue_origin,
             "queue_entry_mode": config.queue_entry_mode,
             "api_url": config.api_url,
             "queue_timeout_seconds": config.queue_timeout_seconds,
@@ -738,10 +734,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--web-origin",
         default=DEFAULT_WEB_ORIGIN,
         help="Legacy React queue page origin. Only used with --queue-entry-mode web-client.",
-    )
-    parser.add_argument(
-        "--queue-origin",
-        help="Origin used for the queue SSE endpoint. Defaults to --gateway-origin.",
     )
     parser.add_argument("--api-path", default=DEFAULT_API_PATH)
     parser.add_argument("--current-page-uri", default=DEFAULT_PAGE_URI)

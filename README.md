@@ -172,25 +172,62 @@ docker compose down
 
 - [scripts/gateway_queue_load_test.py](scripts/gateway_queue_load_test.py)
 
-기본 예시:
+호스트에서 바로 실행하는 예시:
 
 ```bash
 python3 scripts/gateway_queue_load_test.py \
   --gateway-origin http://127.0.0.1:8080 \
-  --queue-origin http://127.0.0.1:8080 \
   --stage 5000x2 \
   --queue-timeout-seconds 180 \
   --request-timeout-seconds 5 \
   --verbose
 ```
 
+다만 macOS Docker Desktop 환경에서는 `localhost` 포트 포워딩이 고부하에서 먼저 흔들릴 수 있습니다.
+
+가능하면 아래처럼 Docker 내부 네트워크에서 실행하는 편이 더 안정적입니다.
+
+권장 예시:
+
+```bash
+docker run --rm \
+  --network traffic-control-system_default \
+  -v "$PWD":/work \
+  -w /work \
+  python:3.12-alpine \
+  python scripts/gateway_queue_load_test.py \
+    --gateway-origin http://gateway:8080 \
+    --stage 5000x2 \
+    --queue-timeout-seconds 180 \
+    --request-timeout-seconds 5 \
+    --verbose \
+    --output-json /work/gateway-5000x2.json
+```
+
+이 방식에서는 `localhost` 대신 컨테이너 DNS 이름인 `gateway:8080`을 사용합니다.  
+SSE도 같은 `gateway-origin`을 그대로 사용하므로 별도의 `queue-origin` 옵션은 필요 없습니다.
+
+프로젝트 이름이 달라 Compose 네트워크 이름이 다르게 잡혔다면 `traffic-control-system_default` 부분만 현재 네트워크 이름으로 바꿔주면 됩니다.
+
 스모크 테스트 예시:
 
 ```bash
 python3 scripts/gateway_queue_load_test.py \
   --gateway-origin http://127.0.0.1:8080 \
-  --queue-origin http://127.0.0.1:8080 \
   --stage 20x2
+```
+
+내부 네트워크 스모크 테스트 예시:
+
+```bash
+docker run --rm \
+  --network traffic-control-system_default \
+  -v "$PWD":/work \
+  -w /work \
+  python:3.12-alpine \
+  python scripts/gateway_queue_load_test.py \
+    --gateway-origin http://gateway:8080 \
+    --stage 20x2
 ```
 
 테스트 전에 Redis 상태를 비우고 싶다면:
@@ -199,7 +236,7 @@ python3 scripts/gateway_queue_load_test.py \
 docker exec traffic-control-system-redis-1 redis-cli FLUSHALL
 ```
 
-## 자주 보는 설정값
+## 주요 설정값
 
 `docker-compose.yml`에서 아래 값들을 조절하면 대기열 동작이 달라집니다.
 
@@ -259,10 +296,3 @@ docker exec traffic-control-system-redis-1 redis-cli FLUSHALL
 ├── docker-compose.yml
 └── settings.gradle
 ```
-
-## 이 README를 읽고 나면 이해되어야 하는 것
-
-- 왜 Gateway 뒤에 대기열이 필요한지
-- 이 프로젝트가 `리다이렉트`가 아니라 `202 queue 응답 + SSE` 구조라는 점
-- queue를 통과한 요청만 JWT를 받아 API에 들어간다는 점
-- 어떤 설정값을 바꾸면 시스템의 허용량이 바뀌는지

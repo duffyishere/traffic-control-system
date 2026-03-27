@@ -32,24 +32,25 @@ import static org.mockito.Mockito.when;
 
 class ApiGatewayApplicationTests {
 
+    private static final long REDIRECT_THRESHOLD = 2L;
+    private static final String SEATS_PATH = "/api/v1/concerts/seats";
+
     @Test
     void allowsDirectAccessWhenAdmissionBucketAcceptsUnauthenticatedRequest() {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
-        when(tokenBucketResolver.tryConsumeAboveThreshold(2L)).thenReturn(Mono.just(Boolean.TRUE));
+        when(tokenBucketResolver.tryConsumeAboveThreshold(REDIRECT_THRESHOLD)).thenReturn(Mono.just(Boolean.TRUE));
 
         RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
-        MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/v1/concerts/seats").build()
-        );
+        MockServerWebExchange exchange = exchangeForGet(SEATS_PATH);
         when(chain.filter(exchange)).thenReturn(Mono.empty());
 
         StepVerifier.create(filterFactory.apply(config()).filter(exchange, chain))
                 .verifyComplete();
 
         verify(chain).filter(exchange);
-        verify(tokenBucketResolver).tryConsumeAboveThreshold(2L);
+        verify(tokenBucketResolver).tryConsumeAboveThreshold(REDIRECT_THRESHOLD);
         assertThat(exchange.getResponse().getStatusCode()).isNull();
     }
 
@@ -57,22 +58,17 @@ class ApiGatewayApplicationTests {
     void queuesUnauthenticatedRequestWhenAdmissionBucketRejectsRequest() throws Exception {
         TokenBucketResolver tokenBucketResolver = mock(TokenBucketResolver.class);
         ReactiveJwtDecoder jwtDecoder = mock(ReactiveJwtDecoder.class);
-        when(tokenBucketResolver.tryConsumeAboveThreshold(2L)).thenReturn(Mono.just(Boolean.FALSE));
+        when(tokenBucketResolver.tryConsumeAboveThreshold(REDIRECT_THRESHOLD)).thenReturn(Mono.just(Boolean.FALSE));
 
         RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
-        MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/v1/concerts/seats?concertId=1").build()
-        );
+        MockServerWebExchange exchange = exchangeForGet(SEATS_PATH + "?concertId=1");
 
         StepVerifier.create(filterFactory.apply(config()).filter(exchange, chain))
                 .verifyComplete();
 
         verify(chain, never()).filter(exchange);
-        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
-        String payload = responseBody(exchange);
-        assertThat(extractJsonValue(payload, "status")).isEqualTo("QUEUED");
-        var queryParams = UriComponentsBuilder.fromUriString(extractJsonValue(payload, "queuePagePath")).build().getQueryParams();
+        var queryParams = queuePageQueryParams(exchange);
         assertThat(queryParams.getFirst("requestId")).isNotBlank();
         assertThat(org.springframework.web.util.UriUtils.decode(
                 queryParams.getFirst("requestedUri"),
@@ -88,18 +84,14 @@ class ApiGatewayApplicationTests {
 
         RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
-        MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/v1/concerts/seats")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer broken-token")
-                        .build()
-        );
+        MockServerWebExchange exchange = exchangeForGetWithBearer("broken-token");
 
         StepVerifier.create(filterFactory.apply(config()).filter(exchange, chain))
                 .verifyComplete();
 
         verify(chain, never()).filter(exchange);
-        verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(2L);
-        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(REDIRECT_THRESHOLD);
+        assertQueuedResponse(exchange);
     }
 
     @Test
@@ -115,29 +107,52 @@ class ApiGatewayApplicationTests {
 
         RateLimiterGatewayFilterFactory filterFactory = filterFactory(tokenBucketResolver, jwtDecoder);
         GatewayFilterChain chain = mock(GatewayFilterChain.class);
-        MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/v1/concerts/seats")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer valid-token")
-                        .build()
-        );
+        MockServerWebExchange exchange = exchangeForGetWithBearer("valid-token");
         when(chain.filter(exchange)).thenReturn(Mono.empty());
 
         StepVerifier.create(filterFactory.apply(config()).filter(exchange, chain))
                 .verifyComplete();
 
         verify(chain).filter(exchange);
-        verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(2L);
+        verify(tokenBucketResolver, never()).tryConsumeAboveThreshold(REDIRECT_THRESHOLD);
     }
 
     private RateLimiterGatewayFilterFactory filterFactory(
             TokenBucketResolver tokenBucketResolver,
             ReactiveJwtDecoder jwtDecoder
     ) {
-        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, 2L);
+        return new RateLimiterGatewayFilterFactory(tokenBucketResolver, jwtDecoder, true, REDIRECT_THRESHOLD);
     }
 
     private RateLimiterGatewayFilterFactory.Config config() {
         return new RateLimiterGatewayFilterFactory.Config();
+    }
+
+    private MockServerWebExchange exchangeForGet(String path) {
+        return MockServerWebExchange.from(MockServerHttpRequest.get(path).build());
+    }
+
+    private MockServerWebExchange exchangeForGetWithBearer(String token) {
+        return MockServerWebExchange.from(
+                MockServerHttpRequest.get(SEATS_PATH)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .build()
+        );
+    }
+
+    private void assertQueuedResponse(MockServerWebExchange exchange) {
+        assertThat(extractJsonValue(queuePayload(exchange), "status")).isEqualTo("QUEUED");
+    }
+
+    private org.springframework.util.MultiValueMap<String, String> queuePageQueryParams(MockServerWebExchange exchange) {
+        return UriComponentsBuilder.fromUriString(extractJsonValue(queuePayload(exchange), "queuePagePath"))
+                .build()
+                .getQueryParams();
+    }
+
+    private String queuePayload(MockServerWebExchange exchange) {
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        return responseBody(exchange);
     }
 
     private String responseBody(MockServerWebExchange exchange) {
