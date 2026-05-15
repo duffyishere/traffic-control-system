@@ -1,5 +1,6 @@
 package io.github.duffyishere.gateway.filter;
 
+import io.github.duffyishere.gateway.common.AdmissionCheckGate;
 import io.github.duffyishere.gateway.common.AdmissionRejectionCooldown;
 import io.github.duffyishere.gateway.common.TokenBucketResolver;
 import lombok.Data;
@@ -38,6 +39,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
 
     private final TokenBucketResolver tokenBucketResolver;
     private final AdmissionRejectionCooldown admissionRejectionCooldown;
+    private final AdmissionCheckGate admissionCheckGate;
     private final ReactiveJwtDecoder jwtDecoder;
     private final boolean rateLimiterEnabled;
     private final long redirectThreshold;
@@ -45,6 +47,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
     public RateLimiterGatewayFilterFactory(
             TokenBucketResolver tokenBucketResolver,
             AdmissionRejectionCooldown admissionRejectionCooldown,
+            AdmissionCheckGate admissionCheckGate,
             ReactiveJwtDecoder jwtDecoder,
             @Value("${rate-limiter.enabled:true}") boolean rateLimiterEnabled,
             @Value("${rate-limiter.bucket.redirect-threshold}") long redirectThreshold
@@ -52,6 +55,7 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
         super(Config.class);
         this.tokenBucketResolver = tokenBucketResolver;
         this.admissionRejectionCooldown = admissionRejectionCooldown;
+        this.admissionCheckGate = admissionCheckGate;
         this.jwtDecoder = jwtDecoder;
         this.rateLimiterEnabled = rateLimiterEnabled;
         this.redirectThreshold = redirectThreshold;
@@ -91,7 +95,12 @@ public class RateLimiterGatewayFilterFactory extends AbstractGatewayFilterFactor
             return enqueueRequest(exchange);
         }
 
-        return tokenBucketResolver.tryConsumeAboveThreshold(redirectThreshold)
+        if (!admissionCheckGate.tryAcquire()) {
+            return enqueueRequest(exchange);
+        }
+
+        return Mono.defer(() -> tokenBucketResolver.tryConsumeAboveThreshold(redirectThreshold))
+                .doFinally(ignored -> admissionCheckGate.release())
                 .flatMap(allowed -> {
                     if (allowed) {
                         return chain.filter(exchange);
